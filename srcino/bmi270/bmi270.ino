@@ -3,6 +3,7 @@
 
 // Create a new sensor object
 BMI270 imu;
+unsigned long millisOld, dt;
 
 // I2C address selection
 uint8_t i2cAddress = BMI2_I2C_PRIM_ADDR; // 0x68
@@ -28,7 +29,7 @@ void setup()
         delay(1000);
     }
 
-    // Serial.println("BMI270 connected!");
+    millisOld = millis();
 }
 
 void loop()
@@ -39,6 +40,14 @@ void loop()
 
     // output decimal places
     uint8_t prec = 6;
+
+    // time duration in milliseconds
+    dt = millis() - millisOld;
+    millisOld = millisOld + dt;
+
+    // Print time duration in sec
+    // Serial.print(dt / 1000.0, prec);
+    // Serial.print(",");
 
     // Print acceleration data
     Serial.print(imu.data.accelX, prec);

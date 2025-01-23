@@ -17,12 +17,15 @@ getData <- function(port) {
   # read, in case something came in
   n = 0
   while (TRUE) {
-    nInQ <- serial::nBytesInQueue(con)["n_in"]
+    inQ <- serial::nBytesInQueue(con)
+    nInQ <- inQ["n_in"]
+    # nOutQ <- inQ["n_out"]
     if(nInQ > 32) {
+      # print(inQ)
       a <- serial::read.serialConnection(con)
       print(a)
       n <- n + 1
-      if (n > 10) {
+      if (n > 100) {
         break
       }
     }
@@ -32,7 +35,7 @@ getData <- function(port) {
   # print(a)
 
   # show summary
-  summary(con)
+  # summary(con)
 
   # close the connection
   close(con)
