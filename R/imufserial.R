@@ -1,66 +1,83 @@
-library(tidyverse)
+library(shiny)
+library(imuf)
 
-getMillis <- function() {
-  # function to get current time in milli seconds
-  as.numeric(Sys.time())*1000
-}
-
-getMillisDiff <- function() {
-  old <- getMillis()
-  for (i in 1:1e8) {
-    # do nothing
-  }
-  new <- getMillis()
-  new - old
-}
-
-getData <- function(port) {
+getCon <- function(port) {
   #
-  # receive data from serial port and print it
+  # set up connection for serial port
   con <- serial::serialConnection(name = "testcon", port = port,
-                          mode = "115200,n,8,1", newline = 1, translation = "crlf"
+                                  mode = "115200,n,8,1", newline = 1, translation = "crlf"
+  )
+  if (serial::isOpen(con)) {
+    close(con)
+  }
+  con
+}
+
+readFromSerial <- function(con) {
+  #
+  # helper - function to convert sensor coord to NED
+  bmi2ned <- function(bmi) {
+    # convert bmi coord to ned coord
+    c(bmi[1], -bmi[2], -bmi[3])
+  }
+  #
+  # helper - function to convert deg to radian
+  toRad <- function(deg) {
+    deg * pi/180
+  }
+  #
+  minLength <- 32
+  while (TRUE) {
+    nInQ <- serial::nBytesInQueue(con)["n_in"]
+    if(nInQ <= minLength) next
+    a <- serial::read.serialConnection(con)
+    #
+    # data from the IMU is a row of 6 comma-separated floats:
+    # accx, accy, accz, gyrx, gyry, gyrz
+    a <- stringr::str_split_1(a, ",") %>% trimws() %>% as.numeric() %>% suppressWarnings()
+    if (length(a) != 6) next
+    #
+    # a is the IMU output we want, exit infinite loop and output the value
+    break
+  }
+  # gyr from bmi270 is in deg/sec, need to convert to rad/sec
+  list(acc = bmi2ned(a[1:3]),
+       gyr = bmi2ned(a[4:6]) %>% toRad())
+}
+
+runshiny <- function(port) {
+  if (!requireNamespace("serial", quietly = TRUE)) {
+    stop(
+      "Package \"serial\" must be installed to use this function.",
+      call. = FALSE
+    )
+  }
+  #
+  ui = fluidPage(
+    actionButton("do", "Start animation"),
+    imu_objectOutput("orientations")
   )
 
-  # let's open the serial interface
-  close(con)
-  Sys.sleep(2)
-  open(con)
+  server = function(input, output, session) {
 
-  # Sys.sleep(1)
+    # initial orientation
+    quat0 <- c(cos(pi/4), sin(pi/4), 0, 0)
 
-  # write some stuff
-  # serial::write.serialConnection(con,"Hello World!")
-
-  # read, in case something came in
-  n = 0
-  oldMillis <- getMillis()
-  while (TRUE) {
-    inQ <- serial::nBytesInQueue(con)
-    nInQ <- inQ["n_in"]
-    # nOutQ <- inQ["n_out"]
-    if(nInQ > 32) {
-      # print(inQ)
-      a <- serial::read.serialConnection(con)
-      a <- stringr::str_split_1(a, ",") %>% trimws() %>% as.numeric() %>% suppressWarnings()
-      if (length(a) != 6) next
-      newMillis <- getMillis()
-      print(newMillis - oldMillis)
-      print(a)
-      n <- n + 1
-      oldMillis <- newMillis
-      if (n > 500) {
-        break
+    observeEvent(input$do, {
+      con <- getCon(port)
+      open(con)
+      quat <- quat0
+      while (TRUE) {
+        accgyr <- readFromSerial(con)
+        quat <- compUpdate(accgyr$acc, accgyr$gyr, dt = 1/50, initQ = quat, gain = 0.1)
+        imu_proxy(input$elid) %>%
+          imu_send_data(data = quat)
       }
-    }
+    })
+
+    output$orientations <- renderImu_object(
+      imu_object(quat0)
+    )
   }
-
-  # a <- serial::nBytesInQueue(con)["n_in"]
-  # print(a)
-
-  # show summary
-  # summary(con)
-
-  # close the connection
-  close(con)
-
+  shinyApp(ui = ui, server = server)
 }
